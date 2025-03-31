@@ -122,7 +122,7 @@ private:
 class TextCursor
 {
 public:
-    enum class MoveOperation {
+    enum class MoveOperation : unsigned char {
         Start,
         Up,
         StartOfLine,
@@ -135,7 +135,7 @@ public:
         Right
     };
 
-    enum class MoveMode {
+    enum class MoveMode : unsigned char {
         MoveAnchor,
         KeepAnchor
     };
@@ -345,11 +345,13 @@ public:
     virtual bool allowTimeAnchor() const override { return hasParentSegment(); }
     virtual void startEdit(EditData&) override;
     virtual bool isEditAllowed(EditData&) const override;
+    virtual bool supportsNonTextualEdit() const;
     virtual bool edit(EditData&) override;
     virtual void editCut(EditData&) override;
     virtual void editCopy(EditData&) override;
     virtual void endEdit(EditData&) override;
     virtual void editDrag(EditData&) override;
+    virtual void endDrag(EditData&) override;
     void movePosition(EditData&, TextCursor::MoveOperation);
 
     virtual void undoMoveSegment(Segment* newSeg, Fraction tickDiff);
@@ -367,7 +369,6 @@ public:
     RectF pageRectangle() const;
 
     const Shape& highResShape() const { return ldata()->highResShape.value(); }
-    void computeHighResShape(const muse::draw::FontMetrics& fontMetrics);
 
     void dragTo(EditData&);
 

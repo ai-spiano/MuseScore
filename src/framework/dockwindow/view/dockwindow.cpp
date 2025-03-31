@@ -173,14 +173,7 @@ void DockWindow::init()
 {
     clearRegistry();
 
-#ifdef Q_OS_MACOS
-    /*! TODO: restoring of the window geometry is temporarily disabled for macOS
-     * because it has a problem with saving a normal geometry of main window on KDDockWidgets
-     * see https://github.com/KDAB/KDDockWidgets/pull/273
-    */
-#else
     restoreGeometry();
-#endif
 
     dockWindowProvider()->init(this);
 
@@ -249,9 +242,9 @@ void DockWindow::loadPage(const QString& uri, const QVariantMap& params)
     }
 }
 
-bool DockWindow::isDockOpen(const QString& dockName) const
+bool DockWindow::isDockOpenAndCurrentInFrame(const QString& dockName) const
 {
-    return m_currentPage && m_currentPage->isDockOpen(dockName);
+    return m_currentPage && m_currentPage->isDockOpenAndCurrentInFrame(dockName);
 }
 
 void DockWindow::toggleDock(const QString& dockName)
@@ -300,6 +293,11 @@ QQuickItem& DockWindow::asItem() const
 void DockWindow::restoreDefaultLayout()
 {
     TRACEFUNC;
+
+    //! HACK: notify about upcoming change of current URI
+    //! so that all subscribers of this channel finish their work.
+    //! For example, our popups and tooltips will close.
+    interactiveProvider()->currentUriAboutToBeChanged().notify();
 
     if (m_currentPage) {
         for (DockBase* dock : m_currentPage->allDocks()) {
@@ -381,7 +379,9 @@ void DockWindow::loadPanels(const DockPageView* page)
             }
         }
 
-        addDock(panel, location);
+        bool isSideLocation = location == Location::Left || location == Location::Right;
+
+        addDock(panel, location, isSideLocation ? page->centralDock() : nullptr);
     };
 
     for (DockPanelView* panel : page->panels()) {

@@ -839,10 +839,11 @@ void Measure::add(EngravingItem* e)
     }
     break;
     case ElementType::JUMP:
-        setRepeatJump(true);
-    // fall through
-
     case ElementType::MARKER:
+        if (e && (e->isJump() || (e->isMarker() && toMarker(e)->isRightMarker()))) {
+            // "To coda" markings act like jumps
+            setProperty(Pid::REPEAT_JUMP, true);
+        }
         el().push_back(e);
         break;
 
@@ -942,9 +943,11 @@ void Measure::remove(EngravingItem* e)
         break;
 
     case ElementType::JUMP:
-        setRepeatJump(false);
-    // fall through
     case ElementType::MARKER:
+        if (e->isJump() || (e->isMarker() && toMarker(e)->isRightMarker())) {
+            setProperty(Pid::REPEAT_JUMP, false);
+        }
+    // FALLTHROUGH
     case ElementType::HBOX:
         if (!el().remove(e)) {
             LOGD("Measure(%p)::remove(%s,%p) not found", this, e->typeName(), e);
@@ -1341,12 +1344,10 @@ bool Measure::acceptDrop(EditData& data) const
 
     //! NOTE: Should match NotationInteraction::dragMeasureAnchorElement
     switch (e->type()) {
-    case ElementType::MEASURE_LIST:
     case ElementType::MEASURE_NUMBER:
     case ElementType::JUMP:
     case ElementType::MARKER:
     case ElementType::LAYOUT_BREAK:
-    case ElementType::STAFF_LIST:
         // Always drop to all staves
         viewer->setDropRectangle(canvasBoundingRect());
         return true;
@@ -1395,6 +1396,9 @@ bool Measure::acceptDrop(EditData& data) const
             viewer->setDropRectangle(canvasBoundingRect());
             return true;
         case ActionIconType::STAFF_TYPE_CHANGE:
+            if (!canAddStaffTypeChange(staffIdx)) {
+                return false;
+            }
             viewer->setDropRectangle(staffRect);
             return true;
         case ActionIconType::SYSTEM_LOCK:
@@ -1438,14 +1442,6 @@ EngravingItem* Measure::drop(EditData& data)
     //bool fromPalette = (e->track() == -1);
 
     switch (e->type()) {
-    case ElementType::MEASURE_LIST:
-        delete e;
-        break;
-
-    case ElementType::STAFF_LIST:
-        delete e;
-        break;
-
     case ElementType::MARKER:
     case ElementType::JUMP:
         e->setParent(this);
@@ -1585,7 +1581,7 @@ EngravingItem* Measure::drop(EditData& data)
             break;
         }
         if (b) {
-            b->setTrack(muse::nidx);                   // these are system elements
+            b->setTrack(0);
             b->setParent(measure);
             score()->undoAddElement(b);
         }
@@ -1736,6 +1732,9 @@ EngravingItem* Measure::drop(EditData& data)
             score()->insertMeasure(ElementType::MEASURE, this);
             break;
         case ActionIconType::STAFF_TYPE_CHANGE: {
+            if (!canAddStaffTypeChange(staffIdx)) {
+                return nullptr;
+            }
             EngravingItem* stc = Factory::createStaffTypeChange(this);
             stc->setParent(this);
             stc->setTrack(staffIdx * VOICES);
@@ -1792,7 +1791,7 @@ void Measure::adjustToLen(Fraction nf, bool appendRestsIfNecessary)
         if (nl > ol) {
             // move EndBarLine, TimeSigAnnounce, KeySigAnnounce
             for (Segment* seg = m->first(); seg; seg = seg->next()) {
-                if (seg->segmentType() & (SegmentType::EndBarLine | SegmentType::TimeSigAnnounce | SegmentType::KeySigAnnounce)) {
+                if (seg->segmentType() & (SegmentType::EndBarLine | SegmentType::CourtesyTimeSigType | SegmentType::CourtesyKeySigType)) {
                     seg->setRtick(nl);
                 }
             }
@@ -1968,6 +1967,21 @@ bool Measure::isFinalMeasureOfSection() const
     } while (mb && !mb->isMeasure());           // loop until reach next actual measure or end of score
 
     return false;
+}
+
+LayoutBreak* Measure::sectionBreakElement(bool includeNextFrames) const
+{
+    const MeasureBase* mb = static_cast<const MeasureBase*>(this);
+
+    do {
+        if (LayoutBreak* sectionBreak = mb->sectionBreakElement()) {
+            return sectionBreak;
+        }
+
+        mb = mb->next();
+    } while (includeNextFrames && mb && !mb->isMeasure());           // loop until reach next actual measure or end of score
+
+    return nullptr;
 }
 
 //---------------------------------------------------------
@@ -2885,7 +2899,7 @@ Measure* Measure::mmRestLast() const
 //    otherwise, return the measure itself.
 //---------------------------------------------------------
 
-const Measure* Measure::coveringMMRestOrThis() const
+Measure* Measure::coveringMMRestOrThis()
 {
     if (!style().styleB(Sid::createMultiMeasureRests)) {
         return this;
@@ -2909,6 +2923,11 @@ const Measure* Measure::coveringMMRestOrThis() const
     }
 
     return 0;
+}
+
+const Measure* Measure::coveringMMRestOrThis() const
+{
+    return const_cast<Measure*>(this)->coveringMMRestOrThis();
 }
 
 int Measure::measureRepeatCount(staff_idx_t staffIdx) const
@@ -3440,6 +3459,22 @@ void Measure::checkTrailer()
     }
 }
 
+void Measure::checkEndOfMeasureChange()
+{
+    bool found = false;
+    for (Segment* seg = last(); seg != first(); seg = seg->prev()) {
+        if (seg->enabled() && seg->endOfMeasureChange()) {
+            setEndOfMeasureChange(seg->endOfMeasureChange());
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        setEndOfMeasureChange(false);
+    }
+}
+
 bool Measure::canAddStringTunings(staff_idx_t staffIdx) const
 {
     Staff* staff = score()->staff(staffIdx);
@@ -3473,6 +3508,21 @@ bool Measure::canAddStringTunings(staff_idx_t staffIdx) const
     }
 
     return !alreadyHasStringTunings;
+}
+
+bool Measure::canAddStaffTypeChange(staff_idx_t staffIdx) const
+{
+    for (const EngravingObject* child : el()) {
+        if (!child || !child->isStaffTypeChange()) {
+            continue;
+        }
+        const StaffTypeChange* stc = toStaffTypeChange(child);
+        if (stc->staffIdx() == staffIdx) {
+            // Staff already has a StaffTypeChange at this measure...
+            return false;
+        }
+    }
+    return true;
 }
 
 Fraction Measure::maxTicks() const

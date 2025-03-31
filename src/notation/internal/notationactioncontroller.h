@@ -83,7 +83,8 @@ private:
     void toggleNoteInput();
     void toggleNoteInputMethod(NoteInputMethod method);
     void toggleNoteInputInsert();
-    void addNote(NoteName note, NoteAddingMode addingMode);
+    void handleNoteAction(NoteName note, NoteAddingMode addingMode);
+    void handleNoteAction(const muse::actions::ActionData& args);
     void padNote(const Pad& pad);
     void putNote(const muse::actions::ActionData& args);
     void removeNote(const muse::actions::ActionData& args);
@@ -92,7 +93,7 @@ private:
     void realtimeAdvance();
 
     void toggleAccidental(AccidentalType type);
-    void addArticulation(SymbolId articulationSymbolId);
+    void toggleArticulation(SymbolId articulationSymbolId);
 
     void putTuplet(const muse::actions::ActionData& data);
     void putTuplet(const TupletOptions& options);
@@ -101,6 +102,8 @@ private:
     bool moveSelectionAvailable(MoveSelectionType type) const;
     void moveSelection(MoveSelectionType type, MoveDirection direction);
     void move(MoveDirection direction, bool quickly = false);
+    void moveInputNotes(bool up, PitchMode mode);
+    void movePitchDiatonic(MoveDirection direction, bool);
     void moveWithinChord(MoveDirection direction);
     void selectTopOrBottomOfChord(MoveDirection direction);
 
@@ -203,7 +206,7 @@ private:
     void navigateToTextElementByFraction(const Fraction& fraction);
     void navigateToTextElementInNearMeasure(MoveDirection direction);
 
-    void startNoteInputIfNeed();
+    void startNoteInput();
 
     bool hasSelection() const;
     mu::engraving::EngravingItem* selectedElement() const;
@@ -219,6 +222,9 @@ private:
     bool isNotationPage() const;
     bool isStandardStaff() const;
     bool isTablatureStaff() const;
+
+    void checkForScoreCorruptions();
+
     void registerAction(const muse::actions::ActionCode&, void (NotationActionController::*)(const muse::actions::ActionData& data),
                         bool (NotationActionController::*)() const = &NotationActionController::isNotationPage);
     void registerAction(const muse::actions::ActionCode&, void (NotationActionController::*)(),
