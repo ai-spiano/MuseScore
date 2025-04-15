@@ -415,6 +415,7 @@ public:
 
     const std::vector<Staff*>& staves() const { return m_staves; }
     size_t nstaves() const { return m_staves.size(); }
+    size_t visibleStavesCount() const;
     size_t ntracks() const { return m_staves.size() * VOICES; }
 
     staff_idx_t staffIdx(const Staff*) const;
@@ -580,7 +581,7 @@ public:
     void changeSelectedElementsVoiceAssignment(VoiceAssignment);
 
     const std::vector<Part*>& parts() const;
-    int visiblePartCount() const;
+    size_t visiblePartCount() const;
 
     using StaffAccepted = std::function<bool (const Staff&)>;
     std::set<staff_idx_t> staffIdxSetFromRange(const track_idx_t trackFrom, const track_idx_t trackTo,
@@ -743,6 +744,7 @@ public:
     void removeTempo(const Fraction& tick);
     void setPause(const Fraction& tick, double seconds);
     BeatsPerSecond tempo(const Fraction& tick) const;
+    BeatsPerSecond multipliedTempo(const Fraction& tick) const;
 
     Text* getText(TextStyleType subtype) const;
 
@@ -812,7 +814,7 @@ public:
     Segment* lastSegmentMM() const;
 
     void connectTies(bool silent = false);
-    void undoRemoveStaleTieJumpPoints();
+    void undoRemoveStaleTieJumpPoints(bool undo = true);
 
     void scanElementsInRange(void* data, void (* func)(void*, EngravingItem*), bool all = true);
     int fileDivision() const { return m_fileDivision; }   ///< division of current loading *.msc file
@@ -1032,7 +1034,7 @@ public:
     void removeSystemLocksOnAddLayoutBreak(LayoutBreakType breakType, const MeasureBase* measure);
     void removeLayoutBreaksOnAddSystemLock(const SystemLock* lock);
     void removeSystemLocksOnRemoveMeasures(const MeasureBase* m1, const MeasureBase* m2);
-    void updateSystemLocksOnDisableMMRests();
+    void removeSystemLocksContainingMMRests();
     void updateSystemLocksOnCreateMMRests(Measure* first, Measure* last);
 
     friend class Chord;
@@ -1097,8 +1099,8 @@ private:
     void rebuildTempoAndTimeSigMaps(Measure* m, std::optional<BeatsPerSecond>& tempoPrimo);
     void fixAnacrusisTempo(const std::vector<Measure*>& measures) const;
 
-    void doUndoRemoveStaleTieJumpPoints(Tie* tie);
-    void doUndoResetPartialSlur(Slur* slur);
+    void doUndoRemoveStaleTieJumpPoints(Tie* tie, bool undo = true);
+    void doUndoResetPartialSlur(Slur* slur, bool undo);
 
     void deleteOrShortenOutSpannersFromRange(const Fraction& t1, const Fraction& t2, track_idx_t trackStart, track_idx_t trackEnd,
                                              const SelectionFilter& filter);

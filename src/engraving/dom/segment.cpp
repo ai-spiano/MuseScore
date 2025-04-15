@@ -1106,7 +1106,7 @@ bool Segment::isTupletSubdivision() const
 bool Segment::isInsideTupletOnStaff(staff_idx_t staffIdx) const
 {
     const Segment* refCRSeg = isChordRestType() && hasElements(staffIdx) ? this : prev1WithElemsOnStaff(staffIdx, SegmentType::ChordRest);
-    if (refCRSeg->measure() != measure()) {
+    if (!refCRSeg || refCRSeg->measure() != measure()) {
         return false;
     }
 
@@ -2510,7 +2510,6 @@ void Segment::createShapes()
     for (size_t staffIdx = 0; staffIdx < score()->nstaves(); ++staffIdx) {
         createShape(staffIdx);
     }
-    addPreAppendedToShape();
 }
 
 //---------------------------------------------------------
@@ -2528,17 +2527,6 @@ void Segment::createShape(staff_idx_t staffIdx)
         if (staffIdx < staves.size() && !staves[staffIdx]->show()) {
             return;
         }
-    }
-
-    if (segmentType() & (SegmentType::BarLine | SegmentType::EndBarLine | SegmentType::StartRepeatBarLine | SegmentType::BeginBarLine)) {
-        setVisible(true);
-        BarLine* bl = toBarLine(element(staffIdx * VOICES));
-        if (bl) {
-            rendering::score::LayoutContext lctx(score());
-            RectF r = rendering::score::TLayout::layoutRect(bl, lctx);
-            s.add(r.translated(bl->pos() + bl->staffOffset()), bl);
-        }
-        return;
     }
 
     if (!score()->staff(staffIdx)->show()) {
@@ -2586,13 +2574,16 @@ void Segment::createShape(staff_idx_t staffIdx)
             continue;
         }
 
-        if (e->isHarmony()) {
-            // use same spacing calculation as for chordrest
-            renderer()->layoutItem(toHarmony(e));
-
-            double x1 = e->ldata()->bbox().x() + e->pos().x();
-            double x2 = e->ldata()->bbox().x() + e->ldata()->bbox().width() + e->pos().x();
-            s.addHorizontalSpacing(e, x1, x2);
+        if (e->isHarmony() || e->isFretDiagram()) {
+            // TODO: eliminate once and for all this addHorizontalSpace hack [M.S.]
+            RectF bbox = e->ldata()->bbox().translated(e->pos());
+            s.addHorizontalSpacing(e, bbox.left(), bbox.right());
+            if (e->isFretDiagram()) {
+                if (Harmony* harmony = toFretDiagram(e)->harmony()) {
+                    RectF harmBbox = harmony->ldata()->bbox().translated(harmony->pos() + e->pos());
+                    s.addHorizontalSpacing(harmony, harmBbox.left(), harmBbox.right());
+                }
+            }
         } else if (!e->isRehearsalMark()
                    && !e->isFretDiagram()
                    && !e->isHarmony()
@@ -2617,12 +2608,8 @@ void Segment::createShape(staff_idx_t staffIdx)
             s.add(e->shape().translate(e->pos() + e->staffOffset()));
         }
     }
-}
 
-void Segment::addPreAppendedToShape()
-{
-    track_idx_t tracks = score()->ntracks();
-    for (unsigned track = 0; track < tracks; ++track) {
+    for (track_idx_t track = strack; track < etrack; ++track) {
         if (!m_preAppendedItems[track]) {
             continue;
         }
